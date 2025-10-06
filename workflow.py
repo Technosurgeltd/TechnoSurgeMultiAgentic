@@ -12,17 +12,16 @@ from langchain_core.messages import AnyMessage, HumanMessage, AIMessage
 import leadbot
 import emailagent
 
-# Load .env for API keys (OpenAI, Gmail, etc.)
+# Load .env for API keys
 load_dotenv()
 
-# ---------------- State ----------------
+# class State
 class State(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     lead_saved: bool
     emails_sent: bool
     latest_lead: dict | None
 
-# ---------------- Agent Nodes ----------------
 def leadbot_node(state: State):
     print("\n🤖 LeadBot Agent started...")
     lead = leadbot.run_conversation_from_messages(state["messages"])  
@@ -48,7 +47,8 @@ builder.add_edge("leadbot", "emailagent")
 builder.add_edge("emailagent", END)
 graph = builder.compile()
 
-# ---------------- FastAPI ----------------
+# FastAPI 
+
 app = FastAPI()
 
 @app.get("/")
@@ -58,7 +58,7 @@ def read_root():
 class ChatRequest(BaseModel):
     message: str
 
-# in-memory sessions (replace with Redis/DB in production)
+# in-memory sessions
 SESSIONS: dict[str, State] = {}
 
 @app.post("/chat/{session_id}")
@@ -90,4 +90,5 @@ def chat(session_id: str, req: ChatRequest):
         "lead_saved": ended,   # only true at end
         "emails_sent": emails_sent
     }
+
 
