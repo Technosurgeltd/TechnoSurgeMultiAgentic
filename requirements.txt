@@ -1,0 +1,15 @@
+python-dotenv
+loguru
+fastapi
+uvicorn
+openai
+requests
+gspread
+pypdf
+langchain
+langchain-openai
+langchain-community
+langchain-core
+chromadb
+streamlit
+langgraph
