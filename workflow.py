@@ -3,6 +3,7 @@ from typing_extensions import TypedDict
 from typing import Annotated
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
@@ -51,6 +52,15 @@ graph = builder.compile()
 
 app = FastAPI()
 
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # You can replace "*" with your frontend domain later
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 @app.get("/")
 def read_root():
     return {"message": "🚀 Technosurge Multi-Agent Workflow API is running!"}
@@ -90,5 +100,6 @@ def chat(session_id: str, req: ChatRequest):
         "lead_saved": ended,   # only true at end
         "emails_sent": emails_sent
     }
+
 
 
