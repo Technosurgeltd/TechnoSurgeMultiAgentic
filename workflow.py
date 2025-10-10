@@ -21,12 +21,12 @@ class State(TypedDict):
     lead_saved: bool
     emails_sent: bool
     latest_lead: dict | None
-    conversation_ended: bool  # New: Track if conversation ended
+    conversation_ended: bool  # Added to track conversation end
 
 def leadbot_node(state: State):
     print("\n🤖 LeadBot Agent started...")
     
-    # Convert ALL LangGraph messages to your leadbot format
+    # Convert ALL LangGraph messages to leadbot format
     leadbot_messages = []
     for msg in state["messages"]:
         if isinstance(msg, HumanMessage):
@@ -40,7 +40,7 @@ def leadbot_node(state: State):
     # Pass ENTIRE conversation history + previous lead
     result = leadbot.run_conversation_from_messages(leadbot_messages, previous_lead)
     
-    # Update state with new lead information
+    # Update state
     state["latest_lead"] = result.get("lead", previous_lead)
     state["conversation_ended"] = result.get("conversation_ended", False)
     state["lead_saved"] = state["conversation_ended"]  # Only true if ended (lead saved in leadbot)
@@ -58,7 +58,7 @@ def emailagent_node(state: State):
         print("⚠️ No latest lead found, skipping email...")
         return state
     
-    # Check if we have valid email (already checked in conditional, but redundant safety)
+    # Check if we have valid email (redundant safety)
     if lead.get("email") and lead.get("email") != "NULL":
         try:
             emailagent.send_email_to_lead(lead)
@@ -104,9 +104,9 @@ def read_root():
     return {"message": "🚀 Technosurge Multi-Agent Workflow API is running!"}
 
 class ChatRequest(BaseModel):
-    message: str | None = None  # Enhanced: Allow optional message for initial greeting
+    message: str | None = None  # Allow optional message for initial greeting
 
-# in-memory sessions (replace with Redis/DB in production for persistence)
+# in-memory sessions (replace with Redis/DB in production)
 SESSIONS: dict[str, State] = {}
 
 @app.post("/chat/{session_id}")
