@@ -78,7 +78,7 @@ def analyze_details(user_input, prev_lead=None):
                 {"role": "system", "content": (
                     "Extract name and email from user input. Return ONLY JSON: "
                     "{\"name\": \"name_or_null\", \"email\": \"email_or_null\", \"refused\": true_or_false}. "
-                    "Rules: Accept explicit names (e.g., 'My name is Asif') or standalone proper nouns as names (e.g., 'Asif'). "
+                    "Rules: Accept explicit names (e.g., 'My name is Wajahat') or standalone proper nouns as names (e.g., 'Wajahat'). "
                     "Capture valid emails (e.g., 'muhammadtahhasarwar1110@gmail.com'). Do not infer names from emails. "
                     "If no new info, preserve previous values. If user refuses, set refused: true."
                 )},
@@ -137,13 +137,15 @@ def respond(user_msg: str, prev_lead: dict | None, conversation_memory: list):
     if intent == "end":
         conversation_ended = True
     else:
-        # Intelligent detection of conversation objective (e.g., demo scheduled)
+        # Intelligent detection of conversation objective
         detection_resp = client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": (
-                    "Determine if the conversation has achieved its objective (e.g., demo scheduled, lead captured with name and email, or conversation naturally concluded). "
-                    "Return ONLY JSON: {\"ended\": true_or_false, \"reason\": \"brief reason\"}."
+                    "Determine if the conversation has achieved its objective (e.g., demo scheduled, explicit agreement to proceed with AI services, or clear inquiry about services with name and email provided). "
+                    "Return ONLY JSON: {\"ended\": true_or_false, \"reason\": \"brief reason\"}. "
+                    "Require name, email, and a clear intent to proceed (e.g., demo request, service inquiry like 'I want to improve my website') before ending. "
+                    "Do not end if only name and email are provided without interest."
                 )},
                 {"role": "user", "content": json.dumps(conversation_memory)}
             ]
@@ -164,7 +166,9 @@ def respond(user_msg: str, prev_lead: dict | None, conversation_memory: list):
 
     if conversation_ended and updated_lead.get("email") != "NULL":
         lead = save_lead_to_sheet(updated_lead, conversation_memory)
-        ai_reply = "Thank you for your time! We've saved your details and sent you an email with next steps. Looking forward to our demo! Goodbye 👋"
+        ai_reply = "Thank you for your interest, {name}! We've saved your details and sent you an email with next steps. Looking forward to our demo! Goodbye 👋".format(
+            name=updated_lead.get("name", "there")
+        )
         conversation_memory.append({"role": "assistant", "content": ai_reply})
         return ai_reply, lead, conversation_ended
 
@@ -172,6 +176,7 @@ def respond(user_msg: str, prev_lead: dict | None, conversation_memory: list):
         "You are Technosurge's professional sales and marketing AI assistant, specializing in AI automation and voice AI solutions. "
         "Keep replies under 150 words, warm, professional, and engaging. Personalize with the user's name if known. "
         "If name/email not yet provided, politely request them at the end of your response (e.g., 'To get started, may I have your name and email?'). "
+        "If name and email are provided but no clear interest in services, ask about their business needs or demo interest (e.g., 'How can our AI solutions help your business?'). "
         "Highlight how our AI can solve their needs. Always guide toward scheduling a free demo for personalized advice."
     )
 
