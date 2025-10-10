@@ -73,13 +73,13 @@ def analyze_details(user_input, prev_lead=None):
 
     try:
         resp = client.chat.completions.create(
-            model="gpt-4o",  # Use latest GPT model
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": (
                     "Extract name and email from user input. Return ONLY JSON: "
                     "{\"name\": \"name_or_null\", \"email\": \"email_or_null\", \"refused\": true_or_false}. "
-                    "Rules: Accept explicit names (e.g., 'My name is Zain') or standalone proper nouns as names (e.g., 'Zain'). "
-                    "Capture valid emails (e.g., 'zain@example.com'). Do not infer names from emails. "
+                    "Rules: Accept explicit names (e.g., 'My name is Asif') or standalone proper nouns as names (e.g., 'Asif'). "
+                    "Capture valid emails (e.g., 'muhammadtahhasarwar1110@gmail.com'). Do not infer names from emails. "
                     "If no new info, preserve previous values. If user refuses, set refused: true."
                 )},
                 {"role": "user", "content": f"Previous name: {prev_name or 'none'}, Previous email: {prev_email or 'none'}. User input: {user_input}"}
@@ -87,7 +87,7 @@ def analyze_details(user_input, prev_lead=None):
         )
 
         raw = resp.choices[0].message.content.strip()
-        print(f"📝 Raw OpenAI response: {raw}")  # Debug log
+        print(f"📝 Raw OpenAI response: {raw}")
         try:
             data = json.loads(raw)
             name = data.get("name") if data.get("name") != "null" else prev_name
@@ -111,7 +111,7 @@ def save_lead_to_sheet(lead, conversation_history):
 
     try:
         summary_resp = client.chat.completions.create(
-            model="gpt-4o",  # Use latest GPT model
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": "Summarize the conversation in 2-3 sentences, focusing on business needs and AI services."},
                 {"role": "user", "content": json.dumps(conversation_history)}
@@ -131,17 +131,42 @@ def save_lead_to_sheet(lead, conversation_history):
 def respond(user_msg: str, prev_lead: dict | None, conversation_memory: list):
     conversation_memory.append({"role": "user", "content": user_msg})
 
+    # Detect standard end intent
     intent = detect_intent(user_msg)
     conversation_ended = False
     if intent == "end":
-        ai_reply = "Thank you for your time! Looking forward to assisting you further or seeing you at the demo. Goodbye 👋"
-        conversation_memory.append({"role": "assistant", "content": ai_reply})
-        lead = save_lead_to_sheet(prev_lead, conversation_memory)
         conversation_ended = True
-        return ai_reply, lead, conversation_ended
+    else:
+        # Intelligent detection of conversation objective (e.g., demo scheduled)
+        detection_resp = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": (
+                    "Determine if the conversation has achieved its objective (e.g., demo scheduled, lead captured with name and email, or conversation naturally concluded). "
+                    "Return ONLY JSON: {\"ended\": true_or_false, \"reason\": \"brief reason\"}."
+                )},
+                {"role": "user", "content": json.dumps(conversation_memory)}
+            ]
+        )
+
+        raw_detection = detection_resp.choices[0].message.content.strip()
+        print(f"📝 Raw detection response: {raw_detection}")
+        try:
+            detection_data = json.loads(raw_detection)
+            conversation_ended = detection_data.get("ended", False)
+            if conversation_ended:
+                print(f"📌 Detected conversation end: {detection_data.get('reason', 'No reason provided')}")
+        except json.JSONDecodeError as e:
+            print(f"❌ Detection parsing failed: {e}, Raw: {raw_detection}")
 
     updated_lead = analyze_details(user_msg, prev_lead)
-    print(f"📋 Updated lead: {updated_lead}")  # Debug log
+    print(f"📋 Updated lead: {updated_lead}")
+
+    if conversation_ended and updated_lead.get("email") != "NULL":
+        lead = save_lead_to_sheet(updated_lead, conversation_memory)
+        ai_reply = "Thank you for your time! We've saved your details and sent you an email with next steps. Looking forward to our demo! Goodbye 👋"
+        conversation_memory.append({"role": "assistant", "content": ai_reply})
+        return ai_reply, lead, conversation_ended
 
     system_prompt = (
         "You are Technosurge's professional sales and marketing AI assistant, specializing in AI automation and voice AI solutions. "
@@ -152,7 +177,7 @@ def respond(user_msg: str, prev_lead: dict | None, conversation_memory: list):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",  # Use latest GPT model
+            model="gpt-4o",
             messages=[{"role": "system", "content": system_prompt}] + conversation_memory,
             temperature=0.7,
             max_tokens=200
