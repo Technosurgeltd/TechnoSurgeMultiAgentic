@@ -12,4 +12,8 @@ langchain-community
 langchain-core
 chromadb
 streamlit
+pydantic
 langgraph
+smtplib
+google-auth
+google-auth-oauthlib
