@@ -21,12 +21,11 @@ class State(TypedDict):
     lead_saved: bool
     emails_sent: bool
     latest_lead: dict | None
-    conversation_ended: bool  # Added to track conversation end
+    conversation_ended: bool
 
 def leadbot_node(state: State):
     print("\n🤖 LeadBot Agent started...")
     
-    # Convert ALL LangGraph messages to leadbot format
     leadbot_messages = []
     for msg in state["messages"]:
         if isinstance(msg, HumanMessage):
@@ -34,18 +33,14 @@ def leadbot_node(state: State):
         elif isinstance(msg, AIMessage):
             leadbot_messages.append({"role": "assistant", "content": msg.content})
     
-    # Get the latest lead from previous state
     previous_lead = state.get("latest_lead") or {"name": "Unknown", "email": "NULL"}
     
-    # Pass ENTIRE conversation history + previous lead
     result = leadbot.run_conversation_from_messages(leadbot_messages, previous_lead)
     
-    # Update state
     state["latest_lead"] = result.get("lead", previous_lead)
     state["conversation_ended"] = result.get("conversation_ended", False)
-    state["lead_saved"] = state["conversation_ended"]  # Only true if ended (lead saved in leadbot)
+    state["lead_saved"] = state["conversation_ended"]
     
-    # Add AI response to the conversation
     if "ai_reply" in result:
         state["messages"].append(AIMessage(content=result["ai_reply"]))
     
@@ -58,7 +53,6 @@ def emailagent_node(state: State):
         print("⚠️ No latest lead found, skipping email...")
         return state
     
-    # Check if we have valid email (redundant safety)
     if lead.get("email") and lead.get("email") != "NULL":
         try:
             emailagent.send_email_to_lead(lead)
@@ -73,13 +67,11 @@ def emailagent_node(state: State):
         
     return state
 
-# Conditional routing after leadbot
 def route_after_leadbot(state: State):
     if state["conversation_ended"] and state["latest_lead"].get("email", "NULL") != "NULL":
         return "emailagent"
     return END
 
-# Build the graph
 builder = StateGraph(State)
 builder.add_node("leadbot", leadbot_node)
 builder.add_node("emailagent", emailagent_node)
@@ -88,7 +80,6 @@ builder.add_conditional_edges("leadbot", route_after_leadbot, {"emailagent": "em
 builder.add_edge("emailagent", END)
 graph = builder.compile()
 
-# FastAPI 
 app = FastAPI()
 
 app.add_middleware(
@@ -104,14 +95,12 @@ def read_root():
     return {"message": "🚀 Technosurge Multi-Agent Workflow API is running!"}
 
 class ChatRequest(BaseModel):
-    message: str | None = None  # Allow optional message for initial greeting
+    message: str | None = None
 
-# in-memory sessions (replace with Redis/DB in production)
 SESSIONS: dict[str, State] = {}
 
 @app.post("/chat/{session_id}")
 def chat(session_id: str, req: ChatRequest):
-    # Retrieve or initialize session
     if session_id not in SESSIONS:
         SESSIONS[session_id] = {
             "messages": [],
@@ -123,17 +112,13 @@ def chat(session_id: str, req: ChatRequest):
     
     state = SESSIONS[session_id]
     
-    # If no message provided, treat as initial greeting request
     if req.message:
         state["messages"].append(HumanMessage(content=req.message))
     
-    # Run the LangGraph workflow
     final_state = graph.invoke(state)
     
-    # Update session
     SESSIONS[session_id] = final_state
     
-    # Get the AI reply from the messages
     ai_messages = [msg for msg in final_state["messages"] if isinstance(msg, AIMessage)]
     ai_reply = ai_messages[-1].content if ai_messages else "No response generated"
     
