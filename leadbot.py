@@ -73,25 +73,29 @@ def analyze_details(user_input, prev_lead=None):
 
     try:
         resp = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o",  # Use latest GPT model
             messages=[
                 {"role": "system", "content": (
                     "Extract name and email from user input. Return ONLY JSON: "
-                    '{"name": "name_or_null", "email": "email_or_null", "refused": true_or_false}. '
-                    "Rules: Only accept explicit names (e.g., 'My name is Haider'). "
-                    "Do not infer names from email. If valid email provided, capture it. "
-                    "Merge with previous info if partial."
+                    "{\"name\": \"name_or_null\", \"email\": \"email_or_null\", \"refused\": true_or_false}. "
+                    "Rules: Accept explicit names (e.g., 'My name is Zain') or standalone proper nouns as names (e.g., 'Zain'). "
+                    "Capture valid emails (e.g., 'zain@example.com'). Do not infer names from emails. "
+                    "If no new info, preserve previous values. If user refuses, set refused: true."
                 )},
                 {"role": "user", "content": f"Previous name: {prev_name or 'none'}, Previous email: {prev_email or 'none'}. User input: {user_input}"}
             ]
         )
 
         raw = resp.choices[0].message.content.strip()
+        print(f"📝 Raw OpenAI response: {raw}")  # Debug log
         try:
             data = json.loads(raw)
             name = data.get("name") if data.get("name") != "null" else prev_name
             email = data.get("email") if data.get("email") != "null" else prev_email
-            return {"name": name or "Unknown", "email": email or "NULL"}
+            refused = data.get("refused", False)
+            if refused:
+                print("⚠️ User refused to provide details")
+            return {"name": name or prev_name or "Unknown", "email": email or prev_email or "NULL"}
         except json.JSONDecodeError as e:
             print(f"❌ JSON parsing failed in analyze_details: {e}, Raw: {raw}")
             return prev_lead or {"name": "Unknown", "email": "NULL"}
@@ -107,7 +111,7 @@ def save_lead_to_sheet(lead, conversation_history):
 
     try:
         summary_resp = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o",  # Use latest GPT model
             messages=[
                 {"role": "system", "content": "Summarize the conversation in 2-3 sentences, focusing on business needs and AI services."},
                 {"role": "user", "content": json.dumps(conversation_history)}
@@ -137,6 +141,7 @@ def respond(user_msg: str, prev_lead: dict | None, conversation_memory: list):
         return ai_reply, lead, conversation_ended
 
     updated_lead = analyze_details(user_msg, prev_lead)
+    print(f"📋 Updated lead: {updated_lead}")  # Debug log
 
     system_prompt = (
         "You are Technosurge's professional sales and marketing AI assistant, specializing in AI automation and voice AI solutions. "
@@ -147,7 +152,7 @@ def respond(user_msg: str, prev_lead: dict | None, conversation_memory: list):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",  # Use latest GPT model
             messages=[{"role": "system", "content": system_prompt}] + conversation_memory,
             temperature=0.7,
             max_tokens=200
