@@ -38,7 +38,7 @@ if service_account_base64:
         service_account_info = json.loads(base64.b64decode(service_account_base64))
         creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
         gc = gspread.authorize(creds)
-        print("✅ Google Sheets Connected via Environment Variable")
+        print("✅ Google Sheets Connected via Environment Variable")  # Enhanced logging
         
         # Google Sheet Name
         sheet_name = "lead spreadsheet"
