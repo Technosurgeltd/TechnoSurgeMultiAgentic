@@ -187,7 +187,7 @@ def run_conversation_from_messages(messages: list, prev_lead: dict | None = None
             "lead": prev_lead or {"name": "Unknown", "email": "NULL", "summary": "No input yet"}
         }
 
-    # Reuse respond() to handle logic
+    # ✅ IMPORTANT: Pass the previous lead to maintain context
     ai_reply, updated_lead, conversation_ended = respond(last_user_msg, prev_lead)
 
     return {
