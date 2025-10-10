@@ -49,22 +49,21 @@ else:
 # 3️⃣ EMAIL GENERATION (AI Powered)
 # ===========================================
 def generate_email(name, summary):
-    prompt = f"""
-    Write a professional marketing email for Technosurge, an AI agency offering automation and voice AI services.
-    Lead Name: {name if name else "there"}
-    Interest Summary: "{summary}"
-
-    Guidelines:
-    - Friendly but professional
-    - Mention their interest
-    - Include call to action for a free demo
-    - Under 200 words
-    Return JSON only:
-    {{
-      "subject": "...",
-      "body": "..."
-    }}
-    
+    prompt = (
+        "Write a professional marketing email for Technosurge, an AI agency offering automation and voice AI services.\n"
+        f"Lead Name: {name if name else 'there'}\n"
+        f"Interest Summary: \"{summary}\"\n"
+        "Guidelines:\n"
+        "- Friendly but professional\n"
+        "- Mention their interest\n"
+        "- Include call to action for a free demo\n"
+        "- Under 200 words\n"
+        "Return JSON only:\n"
+        "{\n"
+        "  \"subject\": \"...\",\n"
+        "  \"body\": \"...\"\n"
+        "}"
+    )
 
     try:
         response = client.chat.completions.create(
@@ -137,12 +136,8 @@ def main():
             print(f"➡️ Processing: {name} <{email}>")
             subject, body = generate_email(name, summary)
 
-            try:
-                success = send_email(email, subject, body)
-                worksheet.update_cell(idx, 4, "SENT" if success else "FAILED")
-            except Exception as e:
-                print(f"❌ Failed: {e}")
-                worksheet.update_cell(idx, 4, "FAILED")
+            success = send_email(email, subject, body)
+            worksheet.update_cell(idx, 4, "SENT" if success else "FAILED")
 
 # ===========================================
 # 6️⃣ SINGLE LEAD FUNCTION
