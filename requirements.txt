@@ -11,10 +11,9 @@ langchain-openai
 langchain-community
 langchain-core
 chromadb
-
 pydantic
 langgraph
-
 google-auth
 google-auth-oauthlib
+
 
