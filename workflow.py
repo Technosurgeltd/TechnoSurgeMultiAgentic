@@ -25,9 +25,18 @@ class State(TypedDict):
 
 def leadbot_node(state: State):
     print("\n🤖 LeadBot Agent started...")
-    lead = leadbot.run_conversation_from_messages(state["messages"])  
-    state["lead_saved"] = True
-    state["latest_lead"] = lead
+    
+    # Convert LangGraph messages to your leadbot format
+    human_messages = [msg for msg in state["messages"] if isinstance(msg, HumanMessage)]
+    if human_messages:
+        last_user_message = human_messages[-1].content
+        # Run your leadbot with the latest message
+        lead = leadbot.run_conversation_from_messages([{"role": "user", "content": last_user_message}])
+        state["lead_saved"] = True
+        state["latest_lead"] = lead
+    else:
+        state["latest_lead"] = None
+        
     return state
 
 def emailagent_node(state: State):
@@ -36,10 +45,23 @@ def emailagent_node(state: State):
     if not lead:
         print("⚠️ No latest lead found, skipping email...")
         return state
-    emailagent.send_email_to_lead(lead)
-    state["emails_sent"] = True
+    
+    # Check if conversation ended and we have valid email
+    if lead.get("email") and lead.get("email") != "NULL":
+        try:
+            emailagent.send_email_to_lead(lead)
+            state["emails_sent"] = True
+            print("✅ Email sent successfully")
+        except Exception as e:
+            print(f"❌ Email sending failed: {e}")
+            state["emails_sent"] = False
+    else:
+        print("⚠️ No valid email to send")
+        state["emails_sent"] = False
+        
     return state
 
+# Build the graph
 builder = StateGraph(State)
 builder.add_node("leadbot", leadbot_node)
 builder.add_node("emailagent", emailagent_node)
@@ -49,13 +71,11 @@ builder.add_edge("emailagent", END)
 graph = builder.compile()
 
 # FastAPI 
-
 app = FastAPI()
-
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # You can replace "*" with your frontend domain later
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -73,33 +93,34 @@ SESSIONS: dict[str, State] = {}
 
 @app.post("/chat/{session_id}")
 def chat(session_id: str, req: ChatRequest):
-    # Retrieve or init session
-    state = SESSIONS.get(session_id, {"messages": [], "lead": {"name": None, "email": None, "summary": None}})
-
-    # Add user message
-    state["messages"].append({"role": "user", "content": req.message})
-
-    # Run LeadBot
-    ai_reply, updated_lead, ended = leadbot.respond(req.message, state["lead"])
-
-    # Update session state
-    state["lead"] = updated_lead
-    state["messages"].append({"role": "assistant", "content": ai_reply})
-    SESSIONS[session_id] = state
-
-    # If conversation ended → send email
-    emails_sent = False
-    if ended and updated_lead and updated_lead.get("email") not in [None, "NULL"]:
-        emailagent.send_email_to_lead(updated_lead)
-        emails_sent = True
-
+    # Retrieve or initialize session
+    if session_id not in SESSIONS:
+        SESSIONS[session_id] = {
+            "messages": [],
+            "lead_saved": False,
+            "emails_sent": False,
+            "latest_lead": None
+        }
+    
+    state = SESSIONS[session_id]
+    
+    # Add user message to state
+    state["messages"].append(HumanMessage(content=req.message))
+    
+    # Run the LangGraph workflow
+    final_state = graph.invoke(state)
+    
+    # Update session
+    SESSIONS[session_id] = final_state
+    
+    # Get the AI reply from the messages
+    ai_messages = [msg for msg in final_state["messages"] if isinstance(msg, AIMessage)]
+    ai_reply = ai_messages[-1].content if ai_messages else "No response generated"
+    
     return {
         "status": "ok",
         "ai_reply": ai_reply,
-        "lead": updated_lead,
-        "lead_saved": ended,   # only true at end
-        "emails_sent": emails_sent
+        "lead": final_state.get("latest_lead", {}),
+        "lead_saved": final_state.get("lead_saved", False),
+        "emails_sent": final_state.get("emails_sent", False)
     }
-
-
-
