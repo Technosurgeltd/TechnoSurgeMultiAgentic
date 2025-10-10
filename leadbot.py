@@ -98,7 +98,7 @@ def analyze_details(user_input, prev_lead=None):
 def save_lead_to_sheet(lead, conversation_history):
     if not lead or not worksheet:
         print("❌ Cannot save lead: Worksheet not available")
-        return
+        return lead  # Return lead unchanged
 
     summary_resp = client.chat.completions.create(
         model="gpt-3.5-turbo",
@@ -136,7 +136,7 @@ def respond(user_msg: str, prev_lead: dict | None, conversation_memory: list):
     # Extract details
     updated_lead = analyze_details(user_msg, prev_lead)
 
-    # Ask AI for reply (Enhanced prompt for better user experience)
+    # Ask AI for reply
     system_prompt = (
         "You are Technosurge's professional sales and marketing AI assistant, specializing in AI automation and voice AI solutions. "
         "Keep replies under 150 words, warm, professional, and engaging. Personalize with the user's name if known. "
@@ -162,7 +162,7 @@ def run_conversation_from_messages(messages: list, prev_lead: dict | None = None
     Supports LangChain message objects or dict messages.
     Returns the AI reply + updated lead.
     """
-    # Local conversation_memory (enhanced: no global to avoid concurrency issues)
+    # Local conversation memory to avoid concurrency issues
     conversation_memory = []
 
     # Normalize messages into dicts {role, content}
@@ -187,7 +187,7 @@ def run_conversation_from_messages(messages: list, prev_lead: dict | None = None
             "conversation_ended": False
         }
 
-    # Pass the previous lead to maintain context
+    # Process the last user message
     ai_reply, updated_lead, conversation_ended = respond(last_user_msg, prev_lead, conversation_memory)
 
     return {
