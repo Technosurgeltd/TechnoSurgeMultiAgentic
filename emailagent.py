@@ -69,13 +69,19 @@ def generate_email(name, summary):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",  # Use latest GPT model
+            model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=300,
             temperature=0.7
         )
 
         raw = response.choices[0].message.content.strip()
+        # Strip markdown code block if present
+        if raw.startswith("```") and raw.endswith("```"):
+            raw = raw.strip("```").strip()
+            if raw.startswith("json\n"):
+                raw = raw[4:].strip()
+        print(f"📝 Raw email response: {raw}")
         try:
             data = json.loads(raw)
             if "subject" in data and "body" in data:
@@ -105,19 +111,31 @@ def send_email(to_email, subject, body, retries=3, delay=5):
     print(f"📧 Sending to: {to_email}")
     for attempt in range(1, retries + 1):
         try:
+            # Try SSL on port 465
             with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as server:
                 server.login(GMAIL_USER, GMAIL_PASS)
                 server.sendmail(GMAIL_USER, to_email, msg.as_string())
-            print(f"✅ Email delivered to {to_email}")
+            print(f"✅ Email delivered to {to_email} via SSL")
             return True
         except Exception as e:
-            print(f"❌ Email attempt {attempt} failed to {to_email}: {e}")
+            print(f"❌ SSL attempt {attempt} failed: {e}")
+            if attempt == retries:
+                print("⚠️ Switching to STARTTLS on port 587")
+                try:
+                    with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as server:
+                        server.starttls()
+                        server.login(GMAIL_USER, GMAIL_PASS)
+                        server.sendmail(GMAIL_USER, to_email, msg.as_string())
+                    print(f"✅ Email delivered to {to_email} via STARTTLS")
+                    return True
+                except Exception as e2:
+                    print(f"❌ STARTTLS attempt failed: {e2}")
             if attempt < retries:
-                print(f"⏳ Retrying in {delay} seconds...")
-                time.sleep(delay)
-            else:
-                print(f"❌ All {retries} email attempts failed to {to_email}")
-                return False
+                wait_time = delay * (2 ** (attempt - 1))  # Exponential backoff
+                print(f"⏳ Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+    print(f"❌ All {retries} email attempts failed to {to_email}")
+    return False
 
 # ===========================================
 # 5️⃣ PROCESS ENTIRE SHEET
