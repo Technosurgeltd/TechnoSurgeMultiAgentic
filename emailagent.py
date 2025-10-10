@@ -6,6 +6,8 @@ from email.mime.text import MIMEText
 from openai import OpenAI
 from google.oauth2.service_account import Credentials
 import gspread
+import smtplib
+import time
 
 # ===========================================
 # 1️⃣ LOAD ENVIRONMENT VARIABLES
@@ -67,7 +69,7 @@ def generate_email(name, summary):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",  # Use latest GPT model
             messages=[{"role": "user", "content": prompt}],
             max_tokens=300,
             temperature=0.7
@@ -94,23 +96,28 @@ def generate_email(name, summary):
 # ===========================================
 # 4️⃣ SMTP EMAIL SENDER
 # ===========================================
-def send_email(to_email, subject, body):
+def send_email(to_email, subject, body, retries=3, delay=5):
     msg = MIMEText(body, "plain")
     msg['Subject'] = subject
     msg['From'] = GMAIL_USER
     msg['To'] = to_email
 
     print(f"📧 Sending to: {to_email}")
-    try:
-        import smtplib
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(GMAIL_USER, GMAIL_PASS)
-            server.sendmail(GMAIL_USER, to_email, msg.as_string())
-        print(f"✅ Email delivered to {to_email}")
-        return True
-    except Exception as e:
-        print(f"❌ Email failed to {to_email}: {e}")
-        return False
+    for attempt in range(1, retries + 1):
+        try:
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as server:
+                server.login(GMAIL_USER, GMAIL_PASS)
+                server.sendmail(GMAIL_USER, to_email, msg.as_string())
+            print(f"✅ Email delivered to {to_email}")
+            return True
+        except Exception as e:
+            print(f"❌ Email attempt {attempt} failed to {to_email}: {e}")
+            if attempt < retries:
+                print(f"⏳ Retrying in {delay} seconds...")
+                time.sleep(delay)
+            else:
+                print(f"❌ All {retries} email attempts failed to {to_email}")
+                return False
 
 # ===========================================
 # 5️⃣ PROCESS ENTIRE SHEET
