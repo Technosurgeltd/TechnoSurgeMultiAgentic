@@ -1,5 +1,6 @@
 import os
 import json
+import base64
 from dotenv import load_dotenv
 from openai import OpenAI
 import gspread
@@ -7,20 +8,49 @@ from google.oauth2.service_account import Credentials
 
 # Load environment variables
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPEN_API_KEY"))
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))  # Fixed typo
+
+# 🔐 Google Credential Setup for Render
+def setup_google_credentials():
+    service_account_base64 = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_BASE64")
+    
+    if not service_account_base64:
+        print("❌ GOOGLE_APPLICATION_CREDENTIALS_BASE64 not found")
+        return None
+    
+    try:
+        # Decode base64 and create credentials directly without saving to file
+        service_account_info = json.loads(base64.b64decode(service_account_base64))
+        creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
+        print("✅ Google credentials loaded successfully from environment variable")
+        return creds
+    except Exception as e:
+        print(f"❌ Failed to setup Google credentials: {e}")
+        return None
 
 # Google Sheets setup
-SERVICE_ACCOUNT_FILE = "serviceaccount.json"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
           "https://www.googleapis.com/auth/drive"]
 
-creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-gc = gspread.authorize(creds)
+# Initialize Google credentials
+creds = setup_google_credentials()
 
-sheet_name = "lead spreadsheet"
-worksheet = gc.open(sheet_name).sheet1
+if creds:
+    gc = gspread.authorize(creds)
+    try:
+        sheet_name = "lead spreadsheet"
+        worksheet = gc.open(sheet_name).sheet1
+        print("✅ Google Sheets connected successfully")
+    except Exception as e:
+        print(f"❌ Google Sheets connection failed: {e}")
+        gc = None
+        worksheet = None
+else:
+    gc = None
+    worksheet = None
+    print("❌ Google Sheets not available due to credential issues")
 
-# ---------------- Intents ----------------
+# ---------------- Rest of your code remains the same ----------------
 intents = {
     "end": {
         "keywords": ["bye", "thanks", "goodbye", "stop", "end", "quit", "that's all", "finished", "no more"],
@@ -35,7 +65,6 @@ def detect_intent(user_input):
         if overlap >= data["threshold"]:
             return intent
     return "general"
-
 
 # ---------------- Extract Lead Details ----------------
 def analyze_details(user_input, prev_lead=None):
@@ -65,10 +94,10 @@ def analyze_details(user_input, prev_lead=None):
     except:
         return prev_lead or {"name": "Unknown", "email": "NULL"}
 
-
 # ---------------- Save Lead ----------------
 def save_lead_to_sheet(lead, conversation_history):
-    if not lead:
+    if not lead or not worksheet:
+        print("❌ Cannot save lead: Worksheet not available")
         return
 
     summary_resp = client.chat.completions.create(
@@ -84,7 +113,6 @@ def save_lead_to_sheet(lead, conversation_history):
     worksheet.append_row([lead.get("name", "NULL"), lead.get("email", "NULL"), summary])
     print("✅ Lead saved to Google Sheet.")
     return lead
-
 
 # ---------------- AI Chat ----------------
 conversation_memory = []
@@ -129,7 +157,6 @@ def respond(user_msg: str, prev_lead: dict | None):
 
     return ai_reply, updated_lead, False   # False = still ongoing
 
-
 def run_conversation_from_messages(messages: list, prev_lead: dict | None = None):
     """
     Resume or continue a conversation given message history.
@@ -161,9 +188,10 @@ def run_conversation_from_messages(messages: list, prev_lead: dict | None = None
         }
 
     # Reuse respond() to handle logic
-    ai_reply, updated_lead = respond(last_user_msg, prev_lead)
+    ai_reply, updated_lead, conversation_ended = respond(last_user_msg, prev_lead)
 
     return {
         "ai_reply": ai_reply,
-        "lead": updated_lead
+        "lead": updated_lead,
+        "conversation_ended": conversation_ended
     }
