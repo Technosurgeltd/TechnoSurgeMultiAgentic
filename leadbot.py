@@ -19,7 +19,6 @@ def setup_google_credentials():
         return None
     
     try:
-        # Decode base64 and create credentials directly without saving to file
         service_account_info = json.loads(base64.b64decode(service_account_base64))
         creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
         print("✅ Google credentials loaded successfully from environment variable")
@@ -29,10 +28,11 @@ def setup_google_credentials():
         return None
 
 # Google Sheets setup
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
-          "https://www.googleapis.com/auth/drive"]
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
 
-# Initialize Google credentials
 creds = setup_google_credentials()
 
 if creds:
@@ -71,72 +71,73 @@ def analyze_details(user_input, prev_lead=None):
     prev_name = prev_lead.get("name") if prev_lead else None
     prev_email = prev_lead.get("email") if prev_lead else None
 
-    resp = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": (
-                "Extract name and email from user input. Return ONLY JSON: "
-                '{"name": "name_or_null", "email": "email_or_null", "refused": true_or_false}. '
-                "Rules: Only accept explicit names (e.g., 'My name is Haider'). "
-                "Do not infer names from email. If valid email provided, capture it. "
-                "Merge with previous info if partial."
-            )},
-            {"role": "user", "content": f"Previous name: {prev_name or 'none'}, Previous email: {prev_email or 'none'}. User input: {user_input}"}
-        ]
-    )
-
     try:
+        resp = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": (
+                    "Extract name and email from user input. Return ONLY JSON: "
+                    '{"name": "name_or_null", "email": "email_or_null", "refused": true_or_false}. '
+                    "Rules: Only accept explicit names (e.g., 'My name is Haider'). "
+                    "Do not infer names from email. If valid email provided, capture it. "
+                    "Merge with previous info if partial."
+                )},
+                {"role": "user", "content": f"Previous name: {prev_name or 'none'}, Previous email: {prev_email or 'none'}. User input: {user_input}"}
+            ]
+        )
+
         raw = resp.choices[0].message.content.strip()
-        data = json.loads(raw)
-        name = data.get("name") if data.get("name") != "null" else prev_name
-        email = data.get("email") if data.get("email") != "null" else prev_email
-        return {"name": name or "Unknown", "email": email or "NULL"}
-    except:
+        try:
+            data = json.loads(raw)
+            name = data.get("name") if data.get("name") != "null" else prev_name
+            email = data.get("email") if data.get("email") != "null" else prev_email
+            return {"name": name or "Unknown", "email": email or "NULL"}
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON parsing failed in analyze_details: {e}, Raw: {raw}")
+            return prev_lead or {"name": "Unknown", "email": "NULL"}
+    except Exception as e:
+        print(f"❌ Error in analyze_details: {e}")
         return prev_lead or {"name": "Unknown", "email": "NULL"}
 
 # ---------------- Save Lead ----------------
 def save_lead_to_sheet(lead, conversation_history):
     if not lead or not worksheet:
         print("❌ Cannot save lead: Worksheet not available")
-        return lead  # Return lead unchanged
+        return lead
 
-    summary_resp = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "Summarize the conversation in 2-3 sentences, focusing on business needs and AI services."},
-            {"role": "user", "content": json.dumps(conversation_history)}
-        ]
-    )
-    summary = summary_resp.choices[0].message.content.strip()
-    lead["summary"] = summary
+    try:
+        summary_resp = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Summarize the conversation in 2-3 sentences, focusing on business needs and AI services."},
+                {"role": "user", "content": json.dumps(conversation_history)}
+            ]
+        )
+        summary = summary_resp.choices[0].message.content.strip()
+        lead["summary"] = summary
 
-    worksheet.append_row([lead.get("name", "NULL"), lead.get("email", "NULL"), summary])
-    print("✅ Lead saved to Google Sheet.")
-    return lead
+        worksheet.append_row([lead.get("name", "NULL"), lead.get("email", "NULL"), summary])
+        print("✅ Lead saved to Google Sheet.")
+        return lead
+    except Exception as e:
+        print(f"❌ Failed to save lead to sheet: {e}")
+        return lead
 
 # ---------------- AI Chat ----------------
 def respond(user_msg: str, prev_lead: dict | None, conversation_memory: list):
-    """
-    Handle one user message, return AI reply + updated lead.
-    """
     conversation_memory.append({"role": "user", "content": user_msg})
 
-    # Detect intent
     intent = detect_intent(user_msg)
     conversation_ended = False
     if intent == "end":
         ai_reply = "Thank you for your time! Looking forward to assisting you further or seeing you at the demo. Goodbye 👋"
         conversation_memory.append({"role": "assistant", "content": ai_reply})
-
-        # Save lead + summary ONLY on conversation end
         lead = save_lead_to_sheet(prev_lead, conversation_memory)
         conversation_ended = True
         return ai_reply, lead, conversation_ended
 
-    # Extract details
     updated_lead = analyze_details(user_msg, prev_lead)
 
-    # Ask AI for reply
     system_prompt = (
         "You are Technosurge's professional sales and marketing AI assistant, specializing in AI automation and voice AI solutions. "
         "Keep replies under 150 words, warm, professional, and engaging. Personalize with the user's name if known. "
@@ -144,36 +145,32 @@ def respond(user_msg: str, prev_lead: dict | None, conversation_memory: list):
         "Highlight how our AI can solve their needs. Always guide toward scheduling a free demo for personalized advice."
     )
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "system", "content": system_prompt}] + conversation_memory,
-        temperature=0.7,
-        max_tokens=200
-    )
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "system", "content": system_prompt}] + conversation_memory,
+            temperature=0.7,
+            max_tokens=200
+        )
 
-    ai_reply = response.choices[0].message.content.strip()
-    conversation_memory.append({"role": "assistant", "content": ai_reply})
+        ai_reply = response.choices[0].message.content.strip()
+        conversation_memory.append({"role": "assistant", "content": ai_reply})
+    except Exception as e:
+        print(f"❌ Error in respond: {e}")
+        ai_reply = "Sorry, I'm having trouble responding. Please try again or contact us directly!"
 
     return ai_reply, updated_lead, conversation_ended
 
 def run_conversation_from_messages(messages: list, prev_lead: dict | None = None):
-    """
-    Resume or continue a conversation given message history.
-    Supports LangChain message objects or dict messages.
-    Returns the AI reply + updated lead.
-    """
-    # Local conversation memory to avoid concurrency issues
     conversation_memory = []
 
-    # Normalize messages into dicts {role, content}
     for m in messages:
-        if hasattr(m, "type") and hasattr(m, "content"):  # HumanMessage / AIMessage
+        if hasattr(m, "type") and hasattr(m, "content"):
             role = "user" if m.type == "human" else "assistant"
             conversation_memory.append({"role": role, "content": m.content})
         elif isinstance(m, dict):
             conversation_memory.append(m)
 
-    # Find last user message
     last_user_msg = None
     for m in reversed(conversation_memory):
         if m["role"] == "user":
@@ -187,7 +184,6 @@ def run_conversation_from_messages(messages: list, prev_lead: dict | None = None
             "conversation_ended": False
         }
 
-    # Process the last user message
     ai_reply, updated_lead, conversation_ended = respond(last_user_msg, prev_lead, conversation_memory)
 
     return {
