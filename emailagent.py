@@ -33,13 +33,11 @@ service_account_base64 = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_BASE64")
 
 if service_account_base64:
     try:
-        # Decode base64 and create credentials directly from environment variable
         service_account_info = json.loads(base64.b64decode(service_account_base64))
         creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
         gc = gspread.authorize(creds)
         print("✅ Google Sheets Connected via Environment Variable")
         
-        # Google Sheet Name
         sheet_name = "lead spreadsheet"
         worksheet = gc.open(sheet_name).sheet1
     except Exception as e:
@@ -66,23 +64,32 @@ def generate_email(name, summary):
       "subject": "...",
       "body": "..."
     }}
-    """
+    
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=300,
-        temperature=0.7
-    )
-
-    raw = response.choices[0].message.content.strip()
     try:
-        data = json.loads(raw)
-        return data["subject"], data["body"]
-    except:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=300,
+            temperature=0.7
+        )
+
+        raw = response.choices[0].message.content.strip()
+        try:
+            data = json.loads(raw)
+            if "subject" in data and "body" in data:
+                return data["subject"], data["body"]
+            else:
+                print(f"❌ Malformed JSON response: {raw}")
+                raise ValueError("JSON missing subject or body")
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON parsing failed: {e}, Raw: {raw}")
+            raise
+    except Exception as e:
+        print(f"❌ Email generation failed: {e}")
         return (
             "Let's Talk About AI Automation",
-            f"Hi {name},\n\nI'd love to show you how Technosurge can help with automation and AI solutions.\nWould you like to schedule a free demo?\n\nBest,\nTechnosurge Team"
+            f"Hi {name or 'there'},\n\nI'd love to show you how Technosurge can help with automation and AI solutions.\nWould you like to schedule a free demo?\n\nBest,\nTechnosurge Team"
         )
 
 # ===========================================
@@ -96,12 +103,15 @@ def send_email(to_email, subject, body):
 
     print(f"📧 Sending to: {to_email}")
     try:
+        import smtplib
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(GMAIL_USER, GMAIL_PASS)
             server.sendmail(GMAIL_USER, to_email, msg.as_string())
         print(f"✅ Email delivered to {to_email}")
+        return True
     except Exception as e:
         print(f"❌ Email failed to {to_email}: {e}")
+        return False
 
 # ===========================================
 # 5️⃣ PROCESS ENTIRE SHEET
@@ -118,7 +128,7 @@ def main():
         print(f"❌ Failed to read sheet: {e}")
         return
 
-    for idx, lead in enumerate(leads, start=2):  # starting from row 2
+    for idx, lead in enumerate(leads, start=2):
         name = lead.get("name")
         email = lead.get("email")
         summary = lead.get("summary") or "No summary provided"
@@ -128,8 +138,8 @@ def main():
             subject, body = generate_email(name, summary)
 
             try:
-                send_email(email, subject, body)
-                worksheet.update_cell(idx, 4, "SENT")
+                success = send_email(email, subject, body)
+                worksheet.update_cell(idx, 4, "SENT" if success else "FAILED")
             except Exception as e:
                 print(f"❌ Failed: {e}")
                 worksheet.update_cell(idx, 4, "FAILED")
@@ -150,23 +160,18 @@ def send_email_to_lead(lead):
         print("⚠️ Invalid email, skipping...")
         return False
 
-    subject, body = generate_email(name, summary)
-
     try:
-        send_email(email, subject, body)
-        print(f"✅ Sent to {email}")
-
-        cell = worksheet.find(email)
-        if cell:
-            worksheet.update_cell(cell.row, 4, "SENT")
-        return True
-
+        subject, body = generate_email(name, summary)
+        success = send_email(email, subject, body)
+        if success:
+            print(f"✅ Sent to {email}")
+            cell = worksheet.find(email)
+            if cell:
+                worksheet.update_cell(cell.row, 4, "SENT")
+        return success
     except Exception as e:
         print(f"❌ Error: {e}")
         return False
 
-# ===========================================
-# 🚀 RUN SCRIPT
-# ===========================================
 if __name__ == "__main__":
     main()
