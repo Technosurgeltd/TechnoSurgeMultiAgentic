@@ -1,7 +1,6 @@
 import os
 import json
 import base64
-import smtplib
 from dotenv import load_dotenv
 from email.mime.text import MIMEText
 from openai import OpenAI
@@ -38,7 +37,7 @@ if service_account_base64:
         service_account_info = json.loads(base64.b64decode(service_account_base64))
         creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
         gc = gspread.authorize(creds)
-        print("✅ Google Sheets Connected via Environment Variable")  # Enhanced logging
+        print("✅ Google Sheets Connected via Environment Variable")
         
         # Google Sheet Name
         sheet_name = "lead spreadsheet"
@@ -136,7 +135,7 @@ def main():
                 worksheet.update_cell(idx, 4, "FAILED")
 
 # ===========================================
-# 6️⃣ SINGLE LEAD FUNCTION (Optional)
+# 6️⃣ SINGLE LEAD FUNCTION
 # ===========================================
 def send_email_to_lead(lead):
     if not worksheet:
@@ -165,7 +164,6 @@ def send_email_to_lead(lead):
     except Exception as e:
         print(f"❌ Error: {e}")
         return False
-
 
 # ===========================================
 # 🚀 RUN SCRIPT
