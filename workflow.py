@@ -51,13 +51,17 @@ def emailagent_node(state: State):
     lead = state.get("latest_lead")
     if not lead:
         print("⚠️ No latest lead found, skipping email...")
+        state["emails_sent"] = False
         return state
     
     if lead.get("email") and lead.get("email") != "NULL":
         try:
-            emailagent.send_email_to_lead(lead)
-            state["emails_sent"] = True
-            print("✅ Email sent successfully")
+            success = emailagent.send_email_to_lead(lead)
+            state["emails_sent"] = success
+            if success:
+                print("✅ Email sent successfully")
+            else:
+                print("❌ Email sending failed")
         except Exception as e:
             print(f"❌ Email sending failed: {e}")
             state["emails_sent"] = False
@@ -86,7 +90,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["*"],  # Allow HEAD for Render health checks
     allow_headers=["*"],
 )
 
