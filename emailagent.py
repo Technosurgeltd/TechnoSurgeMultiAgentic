@@ -1,3 +1,12 @@
+import base64
+
+# Decode Google Key from Render ENV
+service_account_base64 = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_BASE64")
+if service_account_base64:
+    with open("serviceaccount.json", "wb") as f:
+        f.write(base64.b64decode(service_account_base64))
+
+
 import os
 import json
 import smtplib
@@ -147,3 +156,4 @@ def send_email_to_lead(lead):
 
 if __name__ == "__main__":
     main()
+
