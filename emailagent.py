@@ -9,45 +9,44 @@ from google.oauth2.service_account import Credentials
 import gspread
 
 # ===========================================
-# 1️⃣ LOAD ENV & DECODE GOOGLE CREDENTIALS
+# 1️⃣ LOAD ENVIRONMENT VARIABLES
 # ===========================================
 load_dotenv()
-
-# Base64 Google Credential Fix (Render Friendly)
-service_account_base64 = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_BASE64")
-if service_account_base64 and not os.path.exists("serviceaccount.json"):
-    try:
-        with open("serviceaccount.json", "wb") as f:
-            f.write(base64.b64decode(service_account_base64))
-        print("🔐 Google service account decoded successfully.")
-    except Exception as e:
-        print(f"❌ Failed to decode Google credentials: {e}")
 
 # ===========================================
 # 2️⃣ INITIALIZE SERVICES
 # ===========================================
-client = OpenAI(api_key=os.getenv("OPEN_API_KEY"))
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 GMAIL_USER = os.getenv("GMAIL_USER")
 GMAIL_PASS = os.getenv("GMAIL_PASS")
 
-SERVICE_ACCOUNT_FILE = "serviceaccount.json"
+# Google Sheets setup using environment variable directly
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
 
-try:
-    creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-    gc = gspread.authorize(creds)
-    print("✅ Google Sheets Connected")
-except Exception as e:
-    print(f"❌ Google Sheets Auth Failed: {e}")
-    exit()
+# Initialize Google Sheets
+gc = None
+worksheet = None
+service_account_base64 = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_BASE64")
 
-# Google Sheet Name
-sheet_name = "lead spreadsheet"
-worksheet = gc.open(sheet_name).sheet1
+if service_account_base64:
+    try:
+        # Decode base64 and create credentials directly from environment variable
+        service_account_info = json.loads(base64.b64decode(service_account_base64))
+        creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
+        gc = gspread.authorize(creds)
+        print("✅ Google Sheets Connected via Environment Variable")
+        
+        # Google Sheet Name
+        sheet_name = "lead spreadsheet"
+        worksheet = gc.open(sheet_name).sheet1
+    except Exception as e:
+        print(f"❌ Google Sheets Auth Failed: {e}")
+else:
+    print("❌ GOOGLE_APPLICATION_CREDENTIALS_BASE64 environment variable not found")
 
 # ===========================================
 # 3️⃣ EMAIL GENERATION (AI Powered)
@@ -83,8 +82,8 @@ def generate_email(name, summary):
         return data["subject"], data["body"]
     except:
         return (
-            "Let’s Talk About AI Automation",
-            f"Hi {name},\n\nI’d love to show you how Technosurge can help with automation and AI solutions.\nWould you like to schedule a free demo?\n\nBest,\nTechnosurge Team"
+            "Let's Talk About AI Automation",
+            f"Hi {name},\n\nI'd love to show you how Technosurge can help with automation and AI solutions.\nWould you like to schedule a free demo?\n\nBest,\nTechnosurge Team"
         )
 
 # ===========================================
@@ -109,6 +108,10 @@ def send_email(to_email, subject, body):
 # 5️⃣ PROCESS ENTIRE SHEET
 # ===========================================
 def main():
+    if not worksheet:
+        print("❌ Google Sheets not available. Cannot process leads.")
+        return
+
     try:
         leads = worksheet.get_all_records()
         print(f"📊 Leads Found: {len(leads)}")
@@ -136,6 +139,10 @@ def main():
 # 6️⃣ SINGLE LEAD FUNCTION (Optional)
 # ===========================================
 def send_email_to_lead(lead):
+    if not worksheet:
+        print("❌ Google Sheets not available.")
+        return False
+
     name = lead.get("name")
     email = lead.get("email")
     summary = lead.get("summary") or "No summary provided"
