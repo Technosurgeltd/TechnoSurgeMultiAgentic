@@ -8,7 +8,7 @@ from google.oauth2.service_account import Credentials
 
 # Load environment variables
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))  # Fixed typo
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # 🔐 Google Credential Setup for Render
 def setup_google_credentials():
@@ -50,7 +50,7 @@ else:
     worksheet = None
     print("❌ Google Sheets not available due to credential issues")
 
-# ---------------- Rest of your code remains the same ----------------
+# ---------------- Intents ----------------
 intents = {
     "end": {
         "keywords": ["bye", "thanks", "goodbye", "stop", "end", "quit", "that's all", "finished", "no more"],
@@ -115,34 +115,33 @@ def save_lead_to_sheet(lead, conversation_history):
     return lead
 
 # ---------------- AI Chat ----------------
-conversation_memory = []
-
-def respond(user_msg: str, prev_lead: dict | None):
+def respond(user_msg: str, prev_lead: dict | None, conversation_memory: list):
     """
     Handle one user message, return AI reply + updated lead.
     """
-    global conversation_memory
     conversation_memory.append({"role": "user", "content": user_msg})
 
     # Detect intent
     intent = detect_intent(user_msg)
+    conversation_ended = False
     if intent == "end":
         ai_reply = "Thank you for your time! Looking forward to assisting you further or seeing you at the demo. Goodbye 👋"
         conversation_memory.append({"role": "assistant", "content": ai_reply})
 
         # Save lead + summary ONLY on conversation end
         lead = save_lead_to_sheet(prev_lead, conversation_memory)
-        return ai_reply, lead, True   # True = conversation ended
+        conversation_ended = True
+        return ai_reply, lead, conversation_ended
 
     # Extract details
     updated_lead = analyze_details(user_msg, prev_lead)
 
-    # Ask AI for reply
+    # Ask AI for reply (Enhanced prompt for better user experience)
     system_prompt = (
-        "You are Technosurge's professional sales and marketing AI assistant. "
-        "Keep replies under 150 words, warm and professional. "
-        "If name/email not yet provided, politely request them. "
-        "Guide user toward scheduling a demo. "
+        "You are Technosurge's professional sales and marketing AI assistant, specializing in AI automation and voice AI solutions. "
+        "Keep replies under 150 words, warm, professional, and engaging. Personalize with the user's name if known. "
+        "If name/email not yet provided, politely request them at the end of your response (e.g., 'To get started, may I have your name and email?'). "
+        "Highlight how our AI can solve their needs. Always guide toward scheduling a free demo for personalized advice."
     )
 
     response = client.chat.completions.create(
@@ -155,7 +154,7 @@ def respond(user_msg: str, prev_lead: dict | None):
     ai_reply = response.choices[0].message.content.strip()
     conversation_memory.append({"role": "assistant", "content": ai_reply})
 
-    return ai_reply, updated_lead, False   # False = still ongoing
+    return ai_reply, updated_lead, conversation_ended
 
 def run_conversation_from_messages(messages: list, prev_lead: dict | None = None):
     """
@@ -163,7 +162,7 @@ def run_conversation_from_messages(messages: list, prev_lead: dict | None = None
     Supports LangChain message objects or dict messages.
     Returns the AI reply + updated lead.
     """
-    global conversation_memory
+    # Local conversation_memory (enhanced: no global to avoid concurrency issues)
     conversation_memory = []
 
     # Normalize messages into dicts {role, content}
@@ -184,11 +183,12 @@ def run_conversation_from_messages(messages: list, prev_lead: dict | None = None
     if not last_user_msg:
         return {
             "ai_reply": "Hi! I'm the Technosurge assistant. How can I help with your automation needs?",
-            "lead": prev_lead or {"name": "Unknown", "email": "NULL", "summary": "No input yet"}
+            "lead": prev_lead or {"name": "Unknown", "email": "NULL", "summary": "No input yet"},
+            "conversation_ended": False
         }
 
-    # ✅ IMPORTANT: Pass the previous lead to maintain context
-    ai_reply, updated_lead, conversation_ended = respond(last_user_msg, prev_lead)
+    # Pass the previous lead to maintain context
+    ai_reply, updated_lead, conversation_ended = respond(last_user_msg, prev_lead, conversation_memory)
 
     return {
         "ai_reply": ai_reply,
