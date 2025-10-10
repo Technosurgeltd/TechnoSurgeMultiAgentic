@@ -16,7 +16,6 @@ import emailagent
 # Load .env for API keys
 load_dotenv()
 
-# class State
 class State(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     lead_saved: bool
@@ -26,17 +25,28 @@ class State(TypedDict):
 def leadbot_node(state: State):
     print("\n🤖 LeadBot Agent started...")
     
-    # Convert LangGraph messages to your leadbot format
-    human_messages = [msg for msg in state["messages"] if isinstance(msg, HumanMessage)]
-    if human_messages:
-        last_user_message = human_messages[-1].content
-        # Run your leadbot with the latest message
-        lead = leadbot.run_conversation_from_messages([{"role": "user", "content": last_user_message}])
-        state["lead_saved"] = True
-        state["latest_lead"] = lead
-    else:
-        state["latest_lead"] = None
-        
+    # Convert ALL LangGraph messages to your leadbot format
+    leadbot_messages = []
+    for msg in state["messages"]:
+        if isinstance(msg, HumanMessage):
+            leadbot_messages.append({"role": "user", "content": msg.content})
+        elif isinstance(msg, AIMessage):
+            leadbot_messages.append({"role": "assistant", "content": msg.content})
+    
+    # Get the latest lead from previous state
+    previous_lead = state.get("latest_lead") or {"name": "Unknown", "email": "NULL"}
+    
+    # ✅ FIX: Pass ENTIRE conversation history + previous lead
+    result = leadbot.run_conversation_from_messages(leadbot_messages, previous_lead)
+    
+    # Update state with new lead information
+    state["latest_lead"] = result.get("lead", previous_lead)
+    state["lead_saved"] = True
+    
+    # Add AI response to the conversation
+    if "ai_reply" in result:
+        state["messages"].append(AIMessage(content=result["ai_reply"]))
+    
     return state
 
 def emailagent_node(state: State):
@@ -99,7 +109,7 @@ def chat(session_id: str, req: ChatRequest):
             "messages": [],
             "lead_saved": False,
             "emails_sent": False,
-            "latest_lead": None
+            "latest_lead": {"name": "Unknown", "email": "NULL"}
         }
     
     state = SESSIONS[session_id]
