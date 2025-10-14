@@ -134,8 +134,11 @@ def respond(user_msg: str, prev_lead: dict | None, conversation_memory: list):
     # Detect standard end intent
     intent = detect_intent(user_msg)
     conversation_ended = False
+    final_confirmation = False
+    
     if intent == "end":
         conversation_ended = True
+        final_confirmation = True
     else:
         # Intelligent detection of conversation objective
         detection_resp = client.chat.completions.create(
@@ -158,26 +161,55 @@ def respond(user_msg: str, prev_lead: dict | None, conversation_memory: list):
             conversation_ended = detection_data.get("ended", False)
             if conversation_ended:
                 print(f"📌 Detected conversation end: {detection_data.get('reason', 'No reason provided')}")
+                final_confirmation = True
         except json.JSONDecodeError as e:
             print(f"❌ Detection parsing failed: {e}, Raw: {raw_detection}")
 
     updated_lead = analyze_details(user_msg, prev_lead)
     print(f"📋 Updated lead: {updated_lead}")
 
-    if conversation_ended and updated_lead.get("email") != "NULL":
-        lead = save_lead_to_sheet(updated_lead, conversation_memory)
-        ai_reply = "Thank you for your interest, {name}! We've saved your details and sent you an email with next steps. Looking forward to our demo! Goodbye 👋".format(
-            name=updated_lead.get("name", "there")
-        )
-        conversation_memory.append({"role": "assistant", "content": ai_reply})
-        return ai_reply, lead, conversation_ended
+    # If conversation is ending and we have email, save and ask final confirmation
+    if conversation_ended and updated_lead.get("email") != "NULL" and final_confirmation:
+        # First, ask if there's anything else before saving and ending
+        if not any("anything else" in msg.get("content", "").lower() for msg in conversation_memory if msg.get("role") == "assistant"):
+            ai_reply = "Perfect! I've got all your details. Before we wrap up, is there anything else I can help you with today?"
+            conversation_memory.append({"role": "assistant", "content": ai_reply})
+            return ai_reply, updated_lead, False  # Don't end yet, wait for user response
+        
+        # If we already asked about "anything else" and user confirms no, then save and end
+        elif "no" in user_msg.lower() or "that's all" in user_msg.lower() or "nothing else" in user_msg.lower():
+            lead = save_lead_to_sheet(updated_lead, conversation_memory)
+            ai_reply = "Thank you for your interest, {name}! We've saved your details and sent you an email with next steps. Looking forward to our demo! Goodbye 👋".format(
+                name=updated_lead.get("name", "there")
+            )
+            conversation_memory.append({"role": "assistant", "content": ai_reply})
+            return ai_reply, updated_lead, True
+        else:
+            # User said there IS something else, continue conversation
+            final_confirmation = False
+            conversation_ended = False
 
+    # Enhanced system prompt for better conversation and marketing
     system_prompt = (
-        "You are Technosurge's professional sales and marketing AI assistant, specializing in AI automation and voice AI solutions. "
-        "Keep replies under 150 words, warm, professional, and engaging. Personalize with the user's name if known. "
-        "If name/email not yet provided, politely request them at the end of your response (e.g., 'To get started, may I have your name and email?'). "
-        "If name and email are provided but no clear interest in services, ask about their business needs or demo interest (e.g., 'How can our AI solutions help your business?'). "
-        "Highlight how our AI can solve their needs. Always guide toward scheduling a free demo for personalized advice."
+        "You are Technosurge's AI sales assistant - professional, engaging, and solution-focused. "
+        "OUR SERVICES: AI automation, voice AI solutions, custom AI development, process optimization.\n\n"
+        "CONVERSATION STRATEGY:\n"
+        "1. BUILD RAPPORT: Start warm, use name if known ('Hi [Name]!'), show genuine interest\n"
+        "2. DISCOVER NEEDS: Ask probing questions about their business challenges\n"
+        "3. POSITION SOLUTIONS: Connect their needs to our AI services with specific benefits\n"
+        "4. PROVIDE VALUE: Share relevant case studies or success stories\n"
+        "5. GUIDE TO ACTION: Suggest next steps (demo, consultation, resources)\n\n"
+        "KEY MESSAGING:\n"
+        "- Highlight 40-60% cost reduction with AI automation\n"
+        "- Emphasize 24/7 AI voice agents for customer service\n"
+        "- Mention seamless integration with existing systems\n"
+        "- Focus on ROI and business outcomes\n\n"
+        "DATA COLLECTION:\n"
+        "- Naturally request name/email when relevant to the conversation\n"
+        "- Frame it as 'To send you the case study/demo link/specific resources'\n"
+        "- If missing info: 'To prepare your personalized demo, may I have your name and email?'\n"
+        "- Always provide value before asking for information\n\n"
+        "Keep responses under 150 words, conversational, and focused on solving their business problems."
     )
 
     try:
@@ -214,7 +246,7 @@ def run_conversation_from_messages(messages: list, prev_lead: dict | None = None
 
     if not last_user_msg:
         return {
-            "ai_reply": "Hi! I'm the Technosurge assistant. How can I help with your automation needs?",
+            "ai_reply": "Hi! I'm Technosurge's AI specialist. We help businesses with Intelligent AI solutions that typically reduce costs by 40-60%. What challenges is your business facing that AI could help solve?",
             "lead": prev_lead or {"name": "Unknown", "email": "NULL", "summary": "No input yet"},
             "conversation_ended": False
         }
